@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+Description: Restart mobile devices in a group on a schedule.
+
+Parameters:
+
+  JamfProUrl:
+    Type: String
+    Description: https://example.jamfcloud.com (No trailing slash)
+
+  JamfConnectionArn:
+    Type: String
+    Description: The connection ARN from the outputs of the base resources stack.
+
+  MobileDeviceGroupId:
+    Type: Number
+    Description: The mobile device group ID to query.
+
+  Schedule:
+    Type: String
+    Description: Cron syntax to run this workflow (e.g. '0 12 * * ? *') https://docs.aws.amazon.com/scheduler/latest/UserGuide/schedule-types.html#cron-based
+
+  TimeZone:
+    Type: String
+    Description: The time zone of the schedule (e.g. 'America/Chicago'). https://docs.aws.amazon.com/scheduler/latest/UserGuide/schedule-types.html#time-zones
+
+Resources:
+
+  RenameMobileDevices:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub ${AWS::StackName}-RenameMobileDevices
+      DefinitionUri: ./rename_mobile_devices.asl.yaml
+      DefinitionSubstitutions:
+        JamfProUrl: !Ref JamfProUrl
+        JamfConnectionArn: !Ref JamfConnectionArn
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action:
+              - events:RetrieveConnectionCredentials
+            Resource: !Ref JamfConnectionArn
+          - Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+              - secretsmanager:DescribeSecret
+            Resource: arn:aws:secretsmanager:*:*:secret:events!connection/*
+          - Effect: Allow
+            Action: states:InvokeHTTPEndpoint
+            Resource: !Sub "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${AWS::StackName}-RenameMobileDevices"
+            Condition:
+              StringEquals:
+                states:HTTPMethod: GET
+              StringLike:
+                states:HTTPEndpoint:
+                  - !Sub "${JamfProUrl}/JSSResource/mobiledevicegroups/id/*"
+                  - !Sub "${JamfProUrl}/api/v2/mobile-devices/*"
+          - Effect: Allow
+            Action: states:InvokeHTTPEndpoint
+            Resource: !Sub "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${AWS::StackName}-RenameMobileDevices"
+            Condition:
+              StringEquals:
+                states:HTTPMethod: POST
+              StringLike:
+                states:HTTPEndpoint: !Sub "${JamfProUrl}/api/preview/mdm/commands"
+      Events:
+        Scheduled:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: !Sub "cron(${Schedule})"
