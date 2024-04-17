@@ -1,0 +1,66 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+Description: Redeploy the Jamf Management Framework to computers that are added to a group.
+
+Parameters:
+
+  JamfProUrl:
+    Type: String
+    Description: https://example.jamfcloud.com (No trailing slash)
+
+  JamfConnectionArn:
+    Type: String
+    Description: The connection ARN from the outputs of the base resources stack.
+
+  WebhooksEventBusName:
+    Type: String
+    Description: The event bus name from the outputs of the base resources stack.
+
+  ComputerGroupId:
+    Type: Number
+    Description: The ID of the computer group to listen for.
+
+
+Resources:
+
+  RedeployManagementFramework:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub ${AWS::StackName}-RedeployManagementFramework
+      DefinitionUri: ./redeploy_management_framework.asl.yaml
+      DefinitionSubstitutions:
+        JamfProUrl: !Ref JamfProUrl
+        JamfConnectionArn: !Ref JamfConnectionArn
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action:
+              - events:RetrieveConnectionCredentials
+            Resource: !Ref JamfConnectionArn
+          - Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+              - secretsmanager:DescribeSecret
+            Resource: arn:aws:secretsmanager:*:*:secret:events!connection/*
+          - Effect: Allow
+            Action: states:InvokeHTTPEndpoint
+            Resource: !Sub "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${AWS::StackName}-RedeployManagementFramework"
+            Condition:
+              StringEquals:
+                states:HTTPMethod: POST
+              StringLike:
+                states:HTTPEndpoint: !Sub "${JamfProUrl}/v1/jamf-management-framework/redeploy/*"
+      Events:
+        Group:
+          EventBusName: !Ref WebhooksEventBusName
+          Pattern:
+            source:
+              - Webhooks API
+            detail-type:
+              - Jamf Pro Webhook
+            detail:
+              id:
+                - !Ref ComputerGroupId
+              webhook:
+                webhookEvent:
+                  - SmartGroupComputerMembershipChange

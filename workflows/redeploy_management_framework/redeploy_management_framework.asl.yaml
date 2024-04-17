@@ -20,10 +20,10 @@ States:
           Type: Task
           Resource: arn:aws:states:::http:invoke
           Parameters:
+            ApiEndpoint.$: States.Format('${JamfProUrl}/v1/jamf-management-framework/redeploy/{}', $.id)
             Method: POST
             Authentication:
               ConnectionArn: ${JamfConnectionArn}
-            ApiEndpoint.$: States.Format('${JamfProUrl}/v1/jamf-management-framework/redeploy/{}', $.id)
           Retry:
             - ErrorEquals:
                 - States.ALL
