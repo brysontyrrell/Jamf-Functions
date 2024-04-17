@@ -1,0 +1,65 @@
+Comment: Rename mobile devices to their serial numbers after enrollment.
+StartAt: Webhook has Management ID?
+
+States:
+
+  Webhook has Management ID?:
+    Type: Choice
+    Choices:
+      - Variable: $.event.managementId
+        IsPresent: true
+        Next: Extract Management ID
+        Comment: Management ID Present
+    Default: Get Management ID
+
+  Extract Management ID:
+    Type: Pass
+    Next: Rename Mobile Device
+    Result:
+      value: $.event.managementId
+    ResultPath: $.managementId
+
+  Get Management ID:
+    Type: Task
+    Resource: arn:aws:states:::http:invoke
+    Parameters:
+      Method: GET
+      ApiEndpoint.$: States.Format('${JamfProUrl}/api/v1/computers-inventory/{}', $.event. jssID)
+      Authentication:
+        ConnectionArn: ${JamfConnectionArn}
+      QueryParameters:
+        section: GENERAL
+    Retry:
+      - ErrorEquals:
+          - States.ALL
+        BackoffRate: 2
+        IntervalSeconds: 1
+        MaxAttempts: 3
+        JitterStrategy: FULL
+    Next: Rename Mobile Device
+    ResultSelector:
+      value: $.general.managementId
+    ResultPath: $.managementId
+
+  Rename Mobile Device:
+    Type: Task
+    Resource: arn:aws:states:::http:invoke
+    Parameters:
+      ApiEndpoint: ${JamfProUrl}/api/preview/mdm/commands
+      Method: POST
+      Authentication:
+        ConnectionArn: ${JamfConnectionArn}
+      RequestBody:
+        commandData:
+          commandType: SETTINGS
+          deviceName.$: $.event.serialNumber
+        clientData:
+          - managementId.$: $.managementId.value
+    Retry:
+      - ErrorEquals:
+          - States.ALL
+        BackoffRate: 2
+        IntervalSeconds: 1
+        MaxAttempts: 3
+        JitterStrategy: FULL
+    End: true
