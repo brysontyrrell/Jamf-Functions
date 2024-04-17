@@ -16,7 +16,6 @@ Parameters:
     Type: String
     Description: The event bus name from the outputs of the base resources stack.
 
-
 Resources:
 
   RenameMobileDevices:
@@ -56,13 +55,15 @@ Resources:
                 states:HTTPEndpoint: !Sub "${JamfProUrl}/api/preview/mdm/commands"
       Events:
         Enrolled:
-          EventBusName: !Ref WebhooksEventBusName
-          Pattern:
-            source:
-              - Webhooks API
-            detail-type:
-              - Jamf Pro Webhook
-            detail:
-              webhook:
-                webhookEvent:
-                  - MobileDeviceEnrolled
+          Type: EventBridgeRule
+          Properties:
+            EventBusName: !Ref WebhooksEventBusName
+            Pattern:
+              source:
+                - Webhooks API
+              detail-type:
+                - Jamf Pro Webhook
+              detail:
+                webhook:
+                  webhookEvent:
+                    - MobileDeviceEnrolled

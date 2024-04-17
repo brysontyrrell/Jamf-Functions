@@ -20,7 +20,6 @@ Parameters:
     Type: Number
     Description: The ID of the computer group to listen for.
 
-
 Resources:
 
   RedeployManagementFramework:
@@ -52,15 +51,17 @@ Resources:
                 states:HTTPEndpoint: !Sub "${JamfProUrl}/api/v1/jamf-management-framework/redeploy/*"
       Events:
         Group:
-          EventBusName: !Ref WebhooksEventBusName
-          Pattern:
-            source:
-              - Webhooks API
-            detail-type:
-              - Jamf Pro Webhook
-            detail:
-              id:
-                - !Ref ComputerGroupId
-              webhook:
-                webhookEvent:
-                  - SmartGroupComputerMembershipChange
+          Type: EventBridgeRule
+          Properties:
+            EventBusName: !Ref WebhooksEventBusName
+            Pattern:
+              source:
+                - Webhooks API
+              detail-type:
+                - Jamf Pro Webhook
+              detail:
+                id:
+                  - !Ref ComputerGroupId
+                webhook:
+                  webhookEvent:
+                    - SmartGroupComputerMembershipChange
