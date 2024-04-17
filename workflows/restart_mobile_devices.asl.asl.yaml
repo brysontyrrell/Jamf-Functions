@@ -39,6 +39,8 @@ States:
           Parameters:
             ApiEndpoint.$:  States.Format('${JamfProUrl}/api/v2/mobile-devices/{}', $.event.jssID)
             Method: GET
+            Authentication:
+              ConnectionArn: ${JamfConnectionArn}
           Retry:
             - ErrorEquals:
                 - States.ALL
