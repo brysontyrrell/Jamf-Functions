@@ -1,0 +1,191 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+Description: Creates the required resources for Jamf Step Functions.
+
+Parameters:
+
+  JamfProUrl:
+    Type: String
+    Description: https://example.jamfcloud.com (No trailing slash)
+
+  JamfApiClientId:
+    Type: String
+
+  JamfApiClientSecret:
+    Type: String
+    NoEcho: true
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Jamf Pro"
+        Parameters:
+          - JamfProUrl
+          - JamfApiClientId
+          - JamfApiClientSecret
+    ParameterLabels:
+      JamfProUrl:
+        default: "Jamf Pro URL"
+      JamfApiClientId:
+        default: "API Client ID"
+      JamfApiClientSecret:
+        default: "API Client Secret"
+
+Resources:
+
+  JamfApiConnection:
+    Type: AWS::Events::Connection
+    Properties:
+      Description: !Sub "API Client for ${JamfProUrl}"
+      AuthorizationType: OAUTH_CLIENT_CREDENTIALS
+      AuthParameters:
+        OAuthParameters:
+          AuthorizationEndpoint: !Sub "${JamfProUrl}/api/oauth/token"
+          HttpMethod: POST
+          ClientParameters:
+            ClientID: !Ref JamfApiClientId
+            ClientSecret: !Ref JamfApiClientSecret
+          OAuthHttpParameters:
+            BodyParameters:
+              - Key: grant_type
+                Value: client_credentials
+                IsValueSecret: false
+
+# Event Bus with Logging Resources
+
+  WebhooksEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Ref AWS::StackName
+
+  WebhooksEventBusLogging:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 7
+      LogGroupName: !Sub /${AWS::StackName}/event-bus-logs
+
+  WebhooksEventBusLoggingPolicy:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyName: !Sub EventBridgeToLogsPolicy-${AWS::StackName}-${AWS::Region}
+      PolicyDocument: !Sub >
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "EventBridgeToLogsPolicy-${AWS::StackName}-${AWS::Region}",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "delivery.logs.amazonaws.com",
+                  "events.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+              ],
+              "Resource": ["${WebhooksEventBusLogging.Arn}"]
+            }
+          ]
+        }
+
+  WebhooksEventBusLoggingRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: !Ref WebhooksEventBus
+      EventPattern:
+        account:
+          - !Ref AWS::AccountId
+      Targets:
+        - Id: CloudwatchLogsTarget
+          Arn: !GetAtt WebhooksEventBusLogging.Arn
+
+# HTTP API Resources
+
+  UrlPathGenerator:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: python3.11
+      MemorySize: 128
+      Handler: index.handler
+      InlineCode: |
+        import uuid
+        
+        import cfnresponse
+        
+        def handler(event, context):
+            return cfnresponse.send(
+                event,
+                context,
+                cfnresponse.SUCCESS,
+                {"Path": "-".join(uuid.uuid4().hex for _ in range(0, 3))}
+            )        
+
+  WebhooksApiPath:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt UrlPathGenerator.Arn
+
+  WebhooksApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      FailOnWarnings: true
+      StageName: !GetAtt WebhooksApiPath.Path
+      DefinitionBody:
+        openapi: "3.0.1"
+        info:
+          title: "Jamf Pro Webhooks API"
+          version: "1.0"
+        paths:
+          /:
+            post:
+              responses:
+                default:
+                  description: EventBridge response
+              x-amazon-apigateway-integration:
+                connectionType: INTERNET
+                type: aws_proxy
+                integrationSubtype: EventBridge-PutEvents
+                payloadFormatVersion: "1.0"
+                credentials: !GetAtt WebhooksApiRole.Arn
+                requestParameters:
+                  EventBusName: !Ref WebhooksEventBus
+                  Detail: $request.body
+                  DetailType: Jamf Pro Webhook
+                  Source: Webhooks API
+
+  WebhooksApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: apigateway.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: ApiDirectWriteEventBridge
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              Action:
+              - events:PutEvents
+              Effect: Allow
+              Resource:
+                - !GetAtt WebhooksEventBus.Arn
+
+Outputs:
+
+  JamfApiConnectionArn:
+    Value: !GetAtt JamfApiConnection.Arn
+
+  WebhooksEventBusName:
+    Value: !Ref WebhooksEventBus
+
+  WebhooksApiUrl:
+    Value: !Sub https://${WebhooksApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/${WebhooksApiPath.Path}/
+
