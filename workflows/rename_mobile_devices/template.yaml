@@ -44,7 +44,7 @@ Resources:
               StringEquals:
                 states:HTTPMethod: GET
               StringLike:
-                states:HTTPEndpoint: !Sub "${JamfProUrl}/api/v1/computers-inventory/*"
+                states:HTTPEndpoint: !Sub "${JamfProUrl}/api/v2/mobile-devices/*"
           - Effect: Allow
             Action: states:InvokeHTTPEndpoint
             Resource: !Sub "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${AWS::StackName}-RenameMobileDevices"

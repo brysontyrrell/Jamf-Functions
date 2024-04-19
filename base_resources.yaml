@@ -180,6 +180,9 @@ Resources:
 
 Outputs:
 
+  JamfProUrl:
+    Value: !Ref JamfProUrl
+
   JamfApiConnectionArn:
     Value: !GetAtt JamfApiConnection.Arn
 

@@ -7,7 +7,7 @@ States:
     Type: Task
     Resource: arn:aws:states:::http:invoke
     Parameters:
-      ApiEndpoint.$: States.Format('${JamfProUrl}/JSSResource/mobiledevicegroups/id/{}', $.event. jssID)
+      ApiEndpoint.$: States.Format('${JamfProUrl}/JSSResource/mobiledevicegroups/id/{}', $.event.jssID)
       Method: GET
       Authentication:
         ConnectionArn: ${JamfConnectionArn}
