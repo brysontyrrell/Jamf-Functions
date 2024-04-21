@@ -107,8 +107,9 @@ Resources:
               detail-type:
                 - Jamf Pro Webhook
               detail:
-                id:
-                  - !Ref ComputerGroupId
+                event:
+                  jssid:
+                    - !Ref ComputerGroupId
                 webhook:
                   webhookEvent:
                     - SmartGroupComputerMembershipChange
