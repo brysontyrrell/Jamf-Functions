@@ -75,7 +75,7 @@ Resources:
                   Type: Task
                   Resource: arn:aws:states:::http:invoke
                   Parameters:
-                    ApiEndpoint.$: States.Format('${JamfProUrl}/api/v2/mobile-devices/{}', $.event.jssID)
+                    ApiEndpoint.$: States.Format('${JamfProUrl}/api/v2/mobile-devices/{}', $.id)
                     Method: GET
                     Authentication:
                       ConnectionArn: ${JamfConnectionArn}
@@ -87,6 +87,9 @@ Resources:
                       MaxAttempts: 3
                       JitterStrategy: FULL
                   Next: Restart Mobile Device
+                  ResultSelector:
+                    value: $.general.managementId
+                  ResultPath: $.managementId
 
                 Restart Mobile Device:
                   Type: Task
