@@ -32,6 +32,14 @@ Metadata:
       JamfApiClientSecret:
         default: "API Client Secret"
 
+Globals:
+  Function:
+    Architectures:
+      - arm64
+    Runtime: python3.11
+    MemorySize: 128
+    Handler: index.handler
+
 Resources:
 
   JamfApiConnection:
@@ -104,14 +112,11 @@ Resources:
 
 # HTTP API Resources
 
-  UrlPathGenerator:
+  TokenGenerator:
     Type: AWS::Serverless::Function
     Properties:
-      Runtime: python3.11
-      MemorySize: 128
-      Handler: index.handler
       InlineCode: |
-        import uuid
+        from secrets import token_urlsafe
         
         import cfnresponse
         
@@ -120,19 +125,54 @@ Resources:
                 event,
                 context,
                 cfnresponse.SUCCESS,
-                {"Path": "-".join(uuid.uuid4().hex for _ in range(0, 3))}
+                {"Value": token_urlsafe(32)}
             )        
+
+  WebhooksApiKey:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt TokenGenerator.Arn
 
   WebhooksApiPath:
     Type: AWS::CloudFormation::CustomResource
     Properties:
-      ServiceToken: !GetAtt UrlPathGenerator.Arn
+      ServiceToken: !GetAtt TokenGenerator.Arn
+
+  ApiKeyAuthorizer:
+    Type: AWS::Serverless::Function
+    Properties:
+      Environment:
+        Variables:
+          API_KEY: !GetAtt WebhooksApiKey.Value
+      InlineCode: |
+        from secrets import compare_digest
+        import os
+        
+        def handler(event, context):
+            api_key = event["headers"].get("x-api-key")
+        
+            if compare_digest(api_key, os.environ["API_KEY"]):
+                return {"isAuthorized": True}
+            else:
+                return {"isAuthorized": False}  
 
   WebhooksApi:
     Type: AWS::Serverless::HttpApi
     Properties:
       FailOnWarnings: true
-      StageName: !GetAtt WebhooksApiPath.Path
+      StageName: !GetAtt WebhooksApiPath.Value
+      Auth:
+        DefaultAuthorizer: ApiKeyAuth
+        Authorizers:
+          ApiKeyAuth:
+            AuthorizerPayloadFormatVersion: 2.0
+            EnableFunctionDefaultPermissions: true
+            EnableSimpleResponses: true
+            FunctionArn: !GetAtt ApiKeyAuthorizer.Arn
+            Identity:
+              ReauthorizeEvery: 300
+              Headers:
+                - x-api-key
       DefinitionBody:
         openapi: "3.0.1"
         info:
@@ -190,5 +230,7 @@ Outputs:
     Value: !Ref WebhooksEventBus
 
   WebhooksApiUrl:
-    Value: !Sub https://${WebhooksApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/${WebhooksApiPath.Path}/
+    Value: !Sub https://${WebhooksApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/${WebhooksApiPath.Value}/
 
+  WebhooksApiKey:
+    Value: !GetAtt WebhooksApiKey.Value
